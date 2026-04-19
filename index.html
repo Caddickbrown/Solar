@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Solar System</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #000;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+      overflow: hidden;
+      height: 100vh;
+    }
+
+    canvas { display: block; }
+
+    /* ── Panels ─────────────────────────────────────────────────────── */
+    .panel {
+      position: fixed;
+      background: rgba(8, 14, 28, 0.88);
+      border: 1px solid rgba(100, 160, 255, 0.18);
+      border-radius: 10px;
+      padding: 14px 16px;
+      backdrop-filter: blur(8px);
+    }
+
+    /* Controls — top left */
+    #controls {
+      top: 14px; left: 14px;
+      width: 220px;
+    }
+
+    /* Info panel — top right */
+    #info {
+      top: 14px; right: 14px;
+      width: 260px;
+    }
+
+    /* Sky view — bottom right */
+    #skyview {
+      bottom: 14px; right: 14px;
+      width: 220px;
+    }
+
+    h3 {
+      color: #90caf9;
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(100,160,255,0.15);
+    }
+
+    label {
+      display: block;
+      color: #9e9e9e;
+      font-size: 11px;
+      margin-bottom: 3px;
+      margin-top: 8px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: #4fc3f7;
+      cursor: pointer;
+    }
+
+    input[type="number"], input[type="datetime-local"] {
+      width: 100%;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(100,160,255,0.2);
+      border-radius: 5px;
+      color: #e0e0e0;
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+
+    select {
+      width: 100%;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(100,160,255,0.2);
+      border-radius: 5px;
+      color: #e0e0e0;
+      padding: 5px 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    button {
+      flex: 1;
+      background: rgba(79, 195, 247, 0.15);
+      border: 1px solid rgba(79,195,247,0.3);
+      border-radius: 6px;
+      color: #4fc3f7;
+      padding: 5px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover { background: rgba(79,195,247,0.28); }
+    button.active { background: rgba(79,195,247,0.35); color: #fff; }
+
+    /* Info rows */
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { color: #757575; font-size: 11px; }
+    .info-value { color: #e0e0e0; font-size: 12px; font-variant-numeric: tabular-nums; }
+    .info-value.visible   { color: #66bb6a; }
+    .info-value.invisible { color: #ef5350; }
+
+    /* Planet selector dots */
+    .planet-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 6px;
+    }
+    .planet-btn {
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      flex: none;
+      border-width: 1px;
+    }
+    .planet-btn.selected {
+      border-color: #fff;
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+    }
+
+    /* Sky canvas */
+    #skyCanvas {
+      display: block;
+      border-radius: 50%;
+      border: 1px solid rgba(100,160,255,0.25);
+    }
+    .sky-label {
+      text-align: center;
+      color: #616161;
+      font-size: 10px;
+      margin-top: 4px;
+    }
+
+    /* Speed display */
+    #speedDisplay {
+      color: #4fc3f7;
+      font-size: 11px;
+      text-align: right;
+    }
+
+    #dateDisplay {
+      color: #fff;
+      font-size: 11px;
+      margin-top: 4px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Controls -->
+<div id="controls" class="panel">
+  <h3>⏱ Time</h3>
+
+  <div id="dateDisplay">—</div>
+
+  <label>Speed</label>
+  <input type="range" id="speedSlider" min="-7" max="7" step="1" value="0">
+  <div id="speedDisplay">Realtime</div>
+
+  <div class="btn-row">
+    <button id="btnPlay" class="active">▶ Play</button>
+    <button id="btnNow">Now</button>
+  </div>
+
+  <h3 style="margin-top:14px">📍 Observer</h3>
+  <label>Latitude (°)</label>
+  <input type="number" id="inputLat" value="51.5" step="0.1" min="-90" max="90">
+  <label>Longitude (°)</label>
+  <input type="number" id="inputLon" value="-0.1" step="0.1" min="-180" max="180">
+</div>
+
+<!-- Planet info -->
+<div id="info" class="panel">
+  <h3>🔭 <span id="selectedName">Mars</span></h3>
+
+  <div class="planet-list" id="planetBtns"></div>
+
+  <div style="margin-top:12px">
+    <div class="info-row">
+      <span class="info-label">Status</span>
+      <span class="info-value" id="infoVisible">—</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Altitude</span>
+      <span class="info-value" id="infoAlt">—</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Azimuth</span>
+      <span class="info-value" id="infoAz">—</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">RA</span>
+      <span class="info-value" id="infoRA">—</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Dec</span>
+      <span class="info-value" id="infoDec">—</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Distance</span>
+      <span class="info-value" id="infoDist">—</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Next Rise</span>
+      <span class="info-value" id="infoRise">—</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Next Set</span>
+      <span class="info-value" id="infoSet">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- Sky view -->
+<div id="skyview" class="panel">
+  <h3>🌐 Sky View</h3>
+  <canvas id="skyCanvas" width="188" height="188"></canvas>
+  <div class="sky-label">Altitude–Azimuth · N at top</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+import { PLANETS, PLANET_COLORS, PLANET_RADII, PLANET_NAMES } from './elements.js';
+import { heliocentricPosition, eclipticToEquatorial, toRaDec } from './kepler.js';
+import { julianDate, daysSinceJ2000, altAz, formatDeg, formatAz, formatRA, formatDec } from './astronomy.js';
+import { getAltAz, getAllVisibility, findRiseSet } from './horizon.js';
+
+// ── Renderer ──────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.prepend(renderer.domElement);
+
+// ── Scene ─────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000008);
+
+// Stars
+const starGeo = new THREE.BufferGeometry();
+const starCount = 3000;
+const starPos = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount * 3; i++) {
+  starPos[i] = (Math.random() - 0.5) * 1000;
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.4, sizeAttenuation: true })));
+
+// ── Camera ────────────────────────────────────────────────────────────────
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 2000);
+camera.position.set(0, 60, 0);
+camera.lookAt(0, 0, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1;
+controls.maxDistance = 600;
+
+// ── Sun ───────────────────────────────────────────────────────────────────
+const sunLight = new THREE.PointLight(0xfff5e0, 2.5, 400);
+scene.add(sunLight);
+scene.add(new THREE.AmbientLight(0x111122, 0.5));
+
+const sunMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(1.0, 24, 16),
+  new THREE.MeshBasicMaterial({ color: 0xfff176 })
+);
+scene.add(sunMesh);
+
+// Sun glow (sprite)
+const glowGeo = new THREE.SphereGeometry(1.6, 16, 12);
+const glowMat = new THREE.MeshBasicMaterial({ color: 0xffd54f, transparent: true, opacity: 0.18, side: THREE.BackSide });
+scene.add(new THREE.Mesh(glowGeo, glowMat));
+
+// ── Orbit rings + planet meshes ───────────────────────────────────────────
+const SCALE = 6; // AU → scene units
+
+const planetMeshes  = {};
+const orbitLines    = {};
+const planetLabels  = {};  // canvas sprites
+
+function makeOrbitLine(el) {
+  const pts = [];
+  const steps = 180;
+  for (let i = 0; i <= steps; i++) {
+    const t_fake = (i / steps) * (2 * Math.PI / el.n); // one full period
+    // Use angle directly for speed
+    const angle = (i / steps) * 2 * Math.PI;
+    const E = angle; // approximate: use true anomaly directly for display
+    const x = el.a * (Math.cos(E) - el.e);
+    const y = el.a * Math.sqrt(1 - el.e * el.e) * Math.sin(E);
+    // Rotate by ω + Ω for approximate ecliptic position
+    const cw = Math.cos(el.w + el.omega), sw = Math.sin(el.w + el.omega);
+    pts.push(new THREE.Vector3(
+      (cw * x - sw * y) * SCALE,
+      0,
+      (sw * x + cw * y) * SCALE
+    ));
+  }
+  const geo  = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat  = new THREE.LineBasicMaterial({ color: 0x1e3a5a, transparent: true, opacity: 0.5 });
+  return new THREE.Line(geo, mat);
+}
+
+for (const name of PLANET_NAMES) {
+  if (name === 'Earth') continue;
+  const el  = PLANETS[name];
+  const col = PLANET_COLORS[name];
+  const r   = PLANET_RADII[name] * 0.35;
+
+  // Orbit ring
+  const orbit = makeOrbitLine(el);
+  scene.add(orbit);
+  orbitLines[name] = orbit;
+
+  // Planet sphere
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(r, 16, 10),
+    new THREE.MeshStandardMaterial({ color: col, roughness: 0.7, metalness: 0 })
+  );
+  scene.add(mesh);
+  planetMeshes[name] = mesh;
+}
+
+// Earth
+{
+  const earthMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(PLANET_RADII.Earth * 0.35, 16, 10),
+    new THREE.MeshStandardMaterial({ color: PLANET_COLORS.Earth, roughness: 0.7 })
+  );
+  scene.add(earthMesh);
+  planetMeshes.Earth = earthMesh;
+}
+
+// Saturn rings
+{
+  const ringGeo = new THREE.RingGeometry(0.28, 0.50, 40);
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xd4b483, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = Math.PI / 3;
+  planetMeshes.Saturn.add(ring);
+}
+
+// ── State ─────────────────────────────────────────────────────────────────
+let simTime  = Date.now();   // ms
+let playing  = true;
+let speedExp = 0;            // 10^speedExp = seconds-per-second multiplier
+let selectedPlanet = 'Mars';
+let observer = { lat: 51.5 * Math.PI / 180, lon: -0.1 * Math.PI / 180 };
+
+let riseSetCache = {};       // { planetName: { rise, set, fetchedAt } }
+
+// ── UI wiring ─────────────────────────────────────────────────────────────
+const SPEED_LABELS = {
+  '-7': '← 100 yr/s', '-6': '← 10 yr/s', '-5': '← 1 yr/s',
+  '-4': '← 1 mo/s',   '-3': '← 1 wk/s',  '-2': '← 1 day/s',
+  '-1': '← 1 hr/s',   '0':  'Realtime',
+   '1': '1 hr/s →',   '2':  '1 day/s →',  '3':  '1 wk/s →',
+   '4': '1 mo/s →',   '5':  '1 yr/s →',   '6':  '10 yr/s →',
+   '7': '100 yr/s →',
+};
+// seconds of sim time per real second
+const SPEED_VALUES = {
+  '-7': -3153600000, '-6': -315360000, '-5': -31536000,
+  '-4': -2592000,    '-3': -604800,    '-2': -86400,
+  '-1': -3600,       '0':  1,
+   '1':  3600,        '2':  86400,      '3':  604800,
+   '4':  2592000,     '5':  31536000,   '6':  315360000,
+   '7':  3153600000,
+};
+
+const speedSlider  = document.getElementById('speedSlider');
+const speedDisplay = document.getElementById('speedDisplay');
+const dateDisplay  = document.getElementById('dateDisplay');
+const btnPlay      = document.getElementById('btnPlay');
+const btnNow       = document.getElementById('btnNow');
+const inputLat     = document.getElementById('inputLat');
+const inputLon     = document.getElementById('inputLon');
+
+speedSlider.addEventListener('input', () => {
+  speedExp = parseInt(speedSlider.value);
+  speedDisplay.textContent = SPEED_LABELS[speedExp];
+});
+
+btnPlay.addEventListener('click', () => {
+  playing = !playing;
+  btnPlay.textContent = playing ? '⏸ Pause' : '▶ Play';
+  btnPlay.classList.toggle('active', playing);
+});
+
+btnNow.addEventListener('click', () => {
+  simTime = Date.now();
+  speedSlider.value = '0';
+  speedExp = 0;
+  speedDisplay.textContent = 'Realtime';
+  invalidateRiseSetCache();
+});
+
+inputLat.addEventListener('change', () => {
+  observer.lat = parseFloat(inputLat.value) * Math.PI / 180;
+  invalidateRiseSetCache();
+});
+inputLon.addEventListener('change', () => {
+  observer.lon = parseFloat(inputLon.value) * Math.PI / 180;
+  invalidateRiseSetCache();
+});
+
+// Planet selector buttons
+const planetBtns = document.getElementById('planetBtns');
+const PLANET_DISPLAY = PLANET_NAMES.filter(n => n !== 'Earth');
+for (const name of PLANET_DISPLAY) {
+  const btn = document.createElement('button');
+  btn.className = 'planet-btn';
+  btn.textContent = name;
+  btn.style.borderColor = PLANET_COLORS[name];
+  btn.style.color = PLANET_COLORS[name];
+  btn.dataset.name = name;
+  if (name === selectedPlanet) btn.classList.add('selected');
+  btn.addEventListener('click', () => {
+    selectedPlanet = name;
+    document.querySelectorAll('.planet-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    document.getElementById('selectedName').textContent = name;
+    invalidateRiseSetCache();
+  });
+  planetBtns.appendChild(btn);
+}
+
+function invalidateRiseSetCache() {
+  riseSetCache = {};
+}
+
+// ── Sky view canvas ────────────────────────────────────────────────────────
+const skyCanvas = document.getElementById('skyCanvas');
+const skyCtx    = skyCanvas.getContext('2d');
+const SKY_R     = 88; // radius in px
+const SKY_CX    = 94, SKY_CY = 94;
+
+function drawSkyView(visibility) {
+  skyCtx.clearRect(0, 0, 188, 188);
+
+  // Background
+  const grad = skyCtx.createRadialGradient(SKY_CX, SKY_CY, 0, SKY_CX, SKY_CY, SKY_R);
+  grad.addColorStop(0,   'rgba(10,20,50,0.95)');
+  grad.addColorStop(1,   'rgba(5,10,25,0.98)');
+  skyCtx.fillStyle = grad;
+  skyCtx.beginPath();
+  skyCtx.arc(SKY_CX, SKY_CY, SKY_R, 0, 2 * Math.PI);
+  skyCtx.fill();
+
+  // Horizon circle
+  skyCtx.strokeStyle = 'rgba(100,150,255,0.25)';
+  skyCtx.lineWidth = 1;
+  skyCtx.beginPath();
+  skyCtx.arc(SKY_CX, SKY_CY, SKY_R, 0, 2 * Math.PI);
+  skyCtx.stroke();
+
+  // Altitude rings at 30° and 60°
+  for (const alt_deg of [30, 60]) {
+    const r = SKY_R * (1 - alt_deg / 90);
+    skyCtx.strokeStyle = 'rgba(100,150,255,0.1)';
+    skyCtx.beginPath();
+    skyCtx.arc(SKY_CX, SKY_CY, r, 0, 2 * Math.PI);
+    skyCtx.stroke();
+  }
+
+  // Cardinal labels
+  skyCtx.fillStyle = 'rgba(150,170,255,0.6)';
+  skyCtx.font = '9px sans-serif';
+  skyCtx.textAlign = 'center';
+  skyCtx.fillText('N', SKY_CX, SKY_CY - SKY_R + 10);
+  skyCtx.fillText('S', SKY_CX, SKY_CY + SKY_R - 3);
+  skyCtx.fillText('E', SKY_CX + SKY_R - 5, SKY_CY + 4);
+  skyCtx.fillText('W', SKY_CX - SKY_R + 5, SKY_CY + 4);
+
+  // Draw planet dots
+  for (const [name, v] of Object.entries(visibility)) {
+    if (!v.visible) continue;
+
+    const alt_norm = v.alt / (Math.PI / 2); // 0 at horizon, 1 at zenith
+    const r_plot   = SKY_R * (1 - alt_norm);
+    // az: 0=N, π/2=E, π=S, 3π/2=W
+    const px = SKY_CX + r_plot * Math.sin(v.az);
+    const py = SKY_CY - r_plot * Math.cos(v.az);
+
+    const col = PLANET_COLORS[name];
+    const isSelected = name === selectedPlanet;
+    const dotR = isSelected ? 5 : 3;
+
+    skyCtx.beginPath();
+    skyCtx.arc(px, py, dotR, 0, 2 * Math.PI);
+    skyCtx.fillStyle = col;
+    skyCtx.fill();
+    if (isSelected) {
+      skyCtx.strokeStyle = '#fff';
+      skyCtx.lineWidth = 1;
+      skyCtx.stroke();
+    }
+
+    // Label
+    skyCtx.fillStyle = col;
+    skyCtx.font = '8px sans-serif';
+    skyCtx.textAlign = 'left';
+    skyCtx.fillText(name.slice(0, 3), px + dotR + 2, py + 3);
+  }
+}
+
+// ── Info panel update ──────────────────────────────────────────────────────
+function updateInfoPanel(date) {
+  const { alt, az, ra, dec, r } = getAltAz(selectedPlanet, observer, date);
+
+  const altDeg = alt * 180 / Math.PI;
+  const visible = alt > 0;
+
+  document.getElementById('infoVisible').textContent = visible ? 'Above horizon ✓' : 'Below horizon';
+  document.getElementById('infoVisible').className = 'info-value ' + (visible ? 'visible' : 'invisible');
+  document.getElementById('infoAlt').textContent  = altDeg.toFixed(2) + '°';
+  document.getElementById('infoAz').textContent   = formatAz(az);
+  document.getElementById('infoRA').textContent   = formatRA(ra);
+  document.getElementById('infoDec').textContent  = formatDec(dec);
+  document.getElementById('infoDist').textContent = r.toFixed(4) + ' AU';
+
+  // Rise/set — cached, recomputed when planet/observer/time changes significantly
+  const cacheKey = selectedPlanet;
+  const now = date.getTime();
+  const cached = riseSetCache[cacheKey];
+  if (!cached || Math.abs(cached.fetchedAt - now) > 3600 * 1000) {
+    // Compute async-style (sync but expensive — only runs when cache stale)
+    const { rise, set } = findRiseSet(selectedPlanet, observer, date);
+    riseSetCache[cacheKey] = { rise, set, fetchedAt: now };
+    updateRiseSetDisplay(rise, set, date);
+  } else {
+    updateRiseSetDisplay(cached.rise, cached.set, date);
+  }
+}
+
+function updateRiseSetDisplay(rise, set, now) {
+  const fmt = (event) => {
+    if (!event) return 'N/A';
+    const d = event.date;
+    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+           + ' ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  };
+  document.getElementById('infoRise').textContent = fmt(rise);
+  document.getElementById('infoSet').textContent  = fmt(set);
+}
+
+// ── Planets 3D update ─────────────────────────────────────────────────────
+function updatePlanetPositions(t) {
+  for (const name of PLANET_NAMES) {
+    const pos = heliocentricPosition(PLANETS[name], t);
+    const mesh = planetMeshes[name];
+    if (mesh) {
+      mesh.position.set(pos.x * SCALE, 0, pos.z * SCALE); // flat on ecliptic plane
+      // Slight y offset based on inclination
+      mesh.position.y = pos.y * SCALE;
+    }
+  }
+
+  // Draw line from Earth to selected planet
+  const earthPos = planetMeshes.Earth?.position;
+  const targetPos = planetMeshes[selectedPlanet]?.position;
+  if (earthPos && targetPos) {
+    if (!scene.userData.sightLine) {
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.4 });
+      const lineGeo = new THREE.BufferGeometry().setFromPoints([earthPos, targetPos]);
+      const line = new THREE.Line(lineGeo, lineMat);
+      scene.add(line);
+      scene.userData.sightLine = line;
+    } else {
+      scene.userData.sightLine.geometry.setFromPoints([earthPos.clone(), targetPos.clone()]);
+    }
+  }
+}
+
+// ── Date display ──────────────────────────────────────────────────────────
+function updateDateDisplay(date) {
+  dateDisplay.textContent = date.toUTCString().replace(' GMT', ' UTC');
+}
+
+// ── Main loop ─────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+let infoUpdateTimer = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const realDelta = Math.min(clock.getDelta(), 0.1); // real seconds
+
+  // Advance sim time
+  if (playing) {
+    const simDelta = SPEED_VALUES[speedExp] * realDelta; // sim seconds
+    simTime += simDelta * 1000; // ms
+  }
+
+  const date = new Date(simTime);
+  const jd   = julianDate(date);
+  const t    = daysSinceJ2000(jd);
+
+  // Update planet positions
+  updatePlanetPositions(t);
+
+  // Date HUD
+  updateDateDisplay(date);
+
+  // Info panel & sky view (throttled to ~4 fps — expensive)
+  infoUpdateTimer += realDelta;
+  if (infoUpdateTimer > 0.25) {
+    infoUpdateTimer = 0;
+    const vis = getAllVisibility(observer, date);
+    drawSkyView(vis);
+    updateInfoPanel(date);
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ── Resize ────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+animate();
+</script>
+</body>
+</html>
