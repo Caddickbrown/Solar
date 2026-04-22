@@ -2,7 +2,7 @@
 
 A real-time solar system viewer built with Three.js and accurate Keplerian orbital mechanics. Enter your location and see exactly where every planet is in the sky — right now, or at any point in history or the future.
 
-![Solar System overview](docs/solar-main.png)
+![Solar System overview](docs/solar-visible-main.png)
 
 ## Features
 
@@ -30,10 +30,18 @@ Select any planet to see:
 - Distance in AU
 - Next rise and set times
 
-![Jupiter selected — 5.42 AU from Sun, altitude 26.6°](docs/solar-planet.png)
+![Jupiter selected — 5.42 AU from Sun, altitude 27.9°](docs/solar-visible-planet.png)
 
 ### Sky View Compass
 A real-time altitude–azimuth projection in the bottom-right showing all visible planets above the horizon, colour-coded by planet.
+
+### Visual Rendering
+- Planets scaled for visibility (not true to scale) — gas giants are large, inner planets clearly distinct
+- Emissive glow on all planet materials so they're readable against black space
+- Atmospheric halo around each planet (transparent glow sphere)
+- Layered sun corona with two glow radii
+- Bright blue orbit lines at 75% opacity
+- Saturn's rings scale with planet radius
 
 ## Files
 
