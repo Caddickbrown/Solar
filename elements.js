@@ -40,14 +40,16 @@ for (const [name, [a, e, i_deg, O_deg, w_deg, L0_deg]] of Object.entries(RAW)) {
 // Visual properties
 // ---------------------------------------------------------------------------
 export const PLANET_COLORS = {
-  Mercury: '#9e9e9e',
-  Venus:   '#ffcc80',
-  Earth:   '#4fc3f7',
-  Mars:    '#ef5350',
-  Jupiter: '#ffb74d',
-  Saturn:  '#ffe082',
-  Uranus:  '#80deea',
-  Neptune: '#5c6bc0',
+  Mercury: '#b5ab9a',
+  Venus:   '#ecd6a4',
+  Earth:   '#6d9ec4',
+  Mars:    '#c8694a',
+  Jupiter: '#d9a56b',
+  Saturn:  '#dcc78f',
+  Uranus:  '#8fc7c8',
+  Neptune: '#6f89cf',
+  Moon:    '#e8e1d2',
+  Sun:     '#f3c46a',
 };
 
 // Relative display radii (scaled for visual clarity — not physical)

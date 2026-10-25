@@ -1,0 +1,192 @@
+@font-face { font-family: 'Newsreader'; font-weight: 300; font-style: normal; font-display: swap; src: url(./assets/newsreader-latin-300-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Newsreader'; font-weight: 400; font-style: normal; font-display: swap; src: url(./assets/newsreader-latin-400-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Newsreader'; font-weight: 400; font-style: italic; font-display: swap; src: url(./assets/newsreader-latin-400-italic.woff2) format('woff2'); }
+@font-face { font-family: 'Newsreader'; font-weight: 500; font-style: italic; font-display: swap; src: url(./assets/newsreader-latin-500-italic.woff2) format('woff2'); }
+@font-face { font-family: 'Outfit'; font-weight: 300; font-display: swap; src: url(./assets/outfit-latin-300-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Outfit'; font-weight: 400; font-display: swap; src: url(./assets/outfit-latin-400-normal.woff2) format('woff2'); }
+
+:root {
+  --bg: #08080a;
+  --ink: #e8e1d2;
+  --ink-2: rgba(232, 225, 210, 0.66);
+  --ink-3: rgba(232, 225, 210, 0.4);
+  --line: rgba(232, 225, 210, 0.14);
+  --amber: #c8903f;
+  --sage: #96b86e;
+  --r-sm: 2px;
+  --r-md: 4px;
+  --serif: 'Newsreader', Georgia, serif;
+  --sans: 'Outfit', 'Helvetica Neue', Arial, sans-serif;
+  --col-l: 316px;
+  --col-r: 296px;
+  --gutter: 36px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 300 13px/1.45 var(--sans);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+canvas#gl, canvas#sky { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+canvas#sky { cursor: grab; touch-action: none; }
+canvas#sky:active { cursor: grabbing; }
+[hidden] { display: none !important; }
+
+button {
+  font: inherit; color: inherit; background: none; border: 0; cursor: pointer;
+  border-radius: var(--r-sm);
+}
+button:focus-visible, input:focus-visible, [role=button]:focus-visible {
+  outline: 1px solid var(--amber); outline-offset: 3px;
+}
+
+/* ── masthead ─────────────────────────────────────────────── */
+.mast { position: fixed; top: 26px; left: var(--gutter); z-index: 5; }
+.mark {
+  font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 46px; line-height: 1; letter-spacing: -0.01em;
+}
+.when { display: block; margin-top: 8px; text-align: left; color: var(--ink-2); padding: 2px 0; }
+.when:hover { color: var(--ink); }
+.when #dateLine { display: block; font: 400 italic 16px/1.2 var(--serif); }
+.when #clock { display: block; font-size: 12px; color: var(--ink-3); margin-top: 1px; }
+#jump { position: absolute; left: 0; top: 70px; opacity: 0; pointer-events: none; width: 1px; height: 1px; }
+
+/* ── top right ────────────────────────────────────────────── */
+.top-right {
+  position: fixed; top: 28px; right: var(--gutter); z-index: 6;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+}
+.modes { display: flex; gap: 22px; }
+.modes button {
+  font: 400 italic 19px/1 var(--serif); color: var(--ink-3);
+  padding: 4px 0 7px; border-bottom: 1px solid transparent;
+}
+.modes button:hover { color: var(--ink-2); }
+.modes button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--amber); }
+.place { font-size: 12px; color: var(--ink-3); padding: 2px 0; }
+.place:hover { color: var(--ink); }
+.place-edit { display: flex; gap: 10px; align-items: end; }
+.place-edit label { display: grid; gap: 3px; font-size: 11px; color: var(--ink-3); }
+.place-edit input {
+  width: 78px; background: transparent; color: var(--ink); font: inherit; font-size: 13px;
+  border: 0; border-bottom: 1px solid var(--line); padding: 2px 0; border-radius: 0;
+}
+.place-edit button { color: var(--amber); padding: 3px 4px; }
+
+/* ── columns ──────────────────────────────────────────────── */
+.col {
+  position: fixed; top: 150px; bottom: 92px; z-index: 4;
+  overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain;
+}
+.col::-webkit-scrollbar { display: none; }
+.col.left { left: var(--gutter); width: var(--col-l); }
+.col.right { right: var(--gutter); width: var(--col-r); }
+.col section { margin-bottom: 18px; }
+
+h2 {
+  font: 400 italic 15px/1 var(--serif); color: var(--amber);
+  padding-bottom: 9px; margin-bottom: 11px; border-bottom: 1px solid var(--line);
+}
+.lede { font: 300 15.5px/1.48 var(--serif); color: var(--ink); text-wrap: pretty; }
+.lede em { font-style: italic; color: var(--ink); }
+.muted { color: var(--ink-2); }
+.fine { font-size: 12px; margin-top: 8px; min-height: 1em; }
+
+/* moon block */
+.moon { display: grid; grid-template-columns: 48px 1fr; gap: 14px; align-items: center; cursor: pointer; padding: 4px 0; }
+.moon canvas { width: 48px; height: 48px; display: block; }
+.moon-name { font: 400 22px/1.15 var(--serif); }
+.moon .muted { font-size: 12.5px; }
+.moon:hover .moon-name { color: #fff; }
+.moon .jump { color: var(--ink-2); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; cursor: pointer; }
+.moon .jump:hover { color: var(--ink); text-decoration-color: var(--amber); }
+
+/* planet list */
+.bodies { list-style: none; }
+.bodies li { border-bottom: 1px solid var(--line); }
+.bodies button {
+  width: 100%; display: grid; grid-template-columns: 14px 1fr auto; align-items: baseline;
+  padding: 3px 6px 3px 0; text-align: left; border-radius: 0;
+}
+.bodies .dot { width: 6px; height: 6px; border-radius: 50%; align-self: center; }
+.bodies .nm { font: 400 italic 17px/1.2 var(--serif); color: var(--ink-2); }
+.bodies .st { font-size: 12px; color: var(--ink-3); }
+.bodies .st.up { color: var(--sage); }
+.bodies button:hover { background: rgba(232, 225, 210, 0.05); }
+.bodies button:hover .nm { color: var(--ink); }
+.bodies button[aria-pressed=true] { background: rgba(200, 144, 63, 0.1); }
+.bodies button[aria-pressed=true] .nm { color: var(--ink); }
+
+#nightChart { width: 100%; height: 136px; display: block; }
+
+.toggles label { display: flex; align-items: center; gap: 9px; color: var(--ink-2); padding: 4px 0; cursor: pointer; }
+.toggles input { accent-color: var(--amber); }
+
+/* ── detail (right) ───────────────────────────────────────── */
+.d-name { font: 300 54px/1.05 var(--serif); letter-spacing: -0.015em; margin-top: 2px; }
+.d-sentence { font: 300 italic 16px/1.45 var(--serif); color: var(--ink-2); margin: 10px 0 18px; text-wrap: pretty; }
+.rows { margin-bottom: 16px; }
+.rows .r { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.rows dt { color: var(--ink-3); font-size: 12px; }
+.rows dd { font-size: 13px; text-align: right; }
+.rows dd.up { color: var(--sage); }
+.d-actions { display: flex; gap: 22px; }
+.d-actions button { font: 400 italic 16px/1 var(--serif); color: var(--amber); padding: 6px 0; }
+.d-actions button:hover { color: #e4b370; }
+
+/* ── time bar ─────────────────────────────────────────────── */
+.time {
+  position: fixed; left: var(--gutter); right: var(--gutter); bottom: 22px; z-index: 6;
+  display: grid; grid-template-columns: 74px 1fr 92px auto auto; align-items: end; gap: 22px;
+  padding-top: 12px; border-top: 1px solid var(--line);
+}
+.live { font: 400 italic 16px/1 var(--serif); color: var(--sage); padding-bottom: 20px; }
+.live.off { color: var(--amber); }
+.scrub { position: relative; padding-bottom: 20px; }
+.ticks { position: absolute; left: 0; right: 0; bottom: 0; height: 14px; font-size: 11px; color: var(--ink-3); pointer-events: none; }
+.ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.ticks span:first-child { transform: none; }
+.ticks span:last-child { transform: translateX(-100%); }
+.speed { font-size: 12px; color: var(--ink-2); text-align: right; padding-bottom: 20px; }
+.time > button { font: 400 italic 16px/1 var(--serif); color: var(--ink-2); padding: 0 0 20px; }
+.time > button:hover { color: var(--ink); }
+
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; cursor: pointer; display: block; }
+input[type=range]::-webkit-slider-runnable-track { height: 1px; background: var(--ink-3); }
+input[type=range]::-moz-range-track { height: 1px; background: var(--ink-3); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%; background: var(--amber); margin-top: -5px; border: 0; }
+input[type=range]::-moz-range-thumb { width: 11px; height: 11px; border-radius: 50%; background: var(--amber); border: 0; }
+
+/* ── 3D labels ────────────────────────────────────────────── */
+#tags { position: fixed; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
+.tag {
+  position: absolute; left: 0; top: 0; padding: 0 0 0 11px; white-space: nowrap; pointer-events: auto; cursor: pointer;
+  font: 400 italic 15px/1 var(--serif); color: var(--ink-3); will-change: transform;
+}
+.tag:hover, .tag.sel { color: var(--ink); }
+.tag.sel { font-weight: 500; }
+
+/* ── narrow screens ───────────────────────────────────────── */
+@media (max-width: 880px) {
+  :root { --gutter: 18px; }
+  .mark { font-size: 36px; }
+  .col.right { display: none; }
+  .col.left {
+    top: auto; bottom: 74px; left: 0; right: 0; width: auto; max-height: 36vh;
+    padding: 14px var(--gutter) 6px; background: rgba(8, 8, 10, 0.94); border-top: 1px solid var(--line);
+  }
+  .top-right { top: 20px; }
+  .time { grid-template-columns: 1fr auto auto; bottom: 14px; gap: 14px; }
+  .live, .speed { display: none; }
+  .scrub { grid-column: 1; }
+  .ticks span:nth-child(2), .ticks span:nth-child(4) { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }

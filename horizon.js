@@ -9,6 +9,7 @@
 import { heliocentricPosition, eclipticToEquatorial, toRaDec } from './kepler.js';
 import { julianDate, daysSinceJ2000, altAz, lst } from './astronomy.js';
 import { PLANETS } from './elements.js';
+import { moonVector, sunVector } from './moon.js';
 
 // ---------------------------------------------------------------------------
 // Core: get altitude (radians) of a body as seen by an observer at a JS Date
@@ -26,18 +27,23 @@ export function getAltAz(body, observer, date, isJD = false) {
   const jd = isJD ? date : julianDate(date);
   const t  = daysSinceJ2000(jd);
 
-  const el = typeof body === 'string' ? PLANETS[body] : body;
-
-  // Heliocentric ecliptic positions
-  const posBody  = heliocentricPosition(el,          t);
-  const posEarth = heliocentricPosition(PLANETS.Earth, t);
-
-  // Geocentric ecliptic vector
-  const rel = {
-    x: posBody.x - posEarth.x,
-    y: posBody.y - posEarth.y,
-    z: posBody.z - posEarth.z,
-  };
+  let rel;
+  if (body === 'Moon') {
+    rel = moonVector(jd);
+  } else if (body === 'Sun') {
+    rel = sunVector(jd);
+  } else {
+    const el = typeof body === 'string' ? PLANETS[body] : body;
+    // Heliocentric ecliptic positions
+    const posBody  = heliocentricPosition(el,          t);
+    const posEarth = heliocentricPosition(PLANETS.Earth, t);
+    // Geocentric ecliptic vector
+    rel = {
+      x: posBody.x - posEarth.x,
+      y: posBody.y - posEarth.y,
+      z: posBody.z - posEarth.z,
+    };
+  }
 
   // Ecliptic → equatorial → RA/Dec
   const eq = eclipticToEquatorial(rel);
