@@ -320,23 +320,20 @@ const planetMeshes  = {};
 const orbitLines    = {};
 const planetLabels  = {};  // canvas sprites
 
+// Ecliptic (x, y, z) in AU -> scene. Ecliptic north is scene up (+y), and
+// ecliptic y becomes -z so orbits run anticlockwise seen from above.
+function eclToScene(p) {
+  return new THREE.Vector3(p.x * SCALE, p.z * SCALE, -p.y * SCALE);
+}
+
 function makeOrbitLine(el) {
+  // Sweep one full orbit through the same solver the planets use, so rings
+  // and planets cannot disagree (inclination, node and perihelion included).
   const pts = [];
-  const steps = 180;
+  const steps = 360;
   for (let i = 0; i <= steps; i++) {
-    const t_fake = (i / steps) * (2 * Math.PI / el.n); // one full period
-    // Use angle directly for speed
-    const angle = (i / steps) * 2 * Math.PI;
-    const E = angle; // approximate: use true anomaly directly for display
-    const x = el.a * (Math.cos(E) - el.e);
-    const y = el.a * Math.sqrt(1 - el.e * el.e) * Math.sin(E);
-    // Rotate by ω + Ω for approximate ecliptic position
-    const cw = Math.cos(el.w + el.omega), sw = Math.sin(el.w + el.omega);
-    pts.push(new THREE.Vector3(
-      (cw * x - sw * y) * SCALE,
-      0,
-      (sw * x + cw * y) * SCALE
-    ));
+    const M = (i / steps) * 2 * Math.PI;
+    pts.push(eclToScene(heliocentricPosition({ ...el, M0: M, n: 0 }, 0)));
   }
   const geo  = new THREE.BufferGeometry().setFromPoints(pts);
   const mat  = new THREE.LineBasicMaterial({ color: 0x2a6aaa, transparent: true, opacity: 0.75 });
@@ -603,9 +600,7 @@ function updatePlanetPositions(t) {
     const pos = heliocentricPosition(PLANETS[name], t);
     const mesh = planetMeshes[name];
     if (mesh) {
-      mesh.position.set(pos.x * SCALE, 0, pos.z * SCALE); // flat on ecliptic plane
-      // Slight y offset based on inclination
-      mesh.position.y = pos.y * SCALE;
+      mesh.position.copy(eclToScene(pos));
     }
   }
 
