@@ -287,7 +287,7 @@ scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, 
 
 // ── Camera ────────────────────────────────────────────────────────────────
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 2000);
-camera.position.set(0, 60, 0);
+camera.position.set(0, 400, 310); // frames Neptune (30 AU = 180 units) at the edge
 camera.lookAt(0, 0, 0);
 
 const controls = new OrbitControls(camera, renderer.domElement);
