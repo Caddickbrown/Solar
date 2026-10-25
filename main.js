@@ -5,13 +5,16 @@
 import * as THREE from 'three';
 import { OrbitControls } from './assets/OrbitControls.js';
 import { PLANETS, PLANET_COLORS, PLANET_RADII, PLANET_NAMES } from './elements.js';
-import { heliocentricPosition } from './kepler.js';
+import { heliocentricPosition, eclipticToEquatorial } from './kepler.js';
 import { julianDate, daysSinceJ2000, gmst, lst, formatRA, formatDec } from './astronomy.js';
 import { getAltAz } from './horizon.js';
 import { makePlanet, makeRings, makeSun, makeOrbit, makeStarfield, makeConstellations } from './planets.js';
 import { SkyView } from './sky.js';
 import { BODIES, nightWindow, nightTracks, closeApproaches, moonInfo, riseSet, compass } from './tonight.js';
-import { moonPhase, moonVector } from './moon.js';
+import { moonPhase, moonVector, sunVector } from './moon.js';
+import { SMALL, SMALL_ORDER, loadSmall, setEarthFn, findPeak, smallPosition, smallMagnitude, orbitSamples } from './smallbodies.js';
+import { nextEclipses, localCircumstances, geometry, shadowRadii, obscuration } from './eclipse.js';
+import { makeComet } from './planets.js';
 
 const D2R = Math.PI / 180, R2D = 180 / Math.PI, TWO_PI = Math.PI * 2;
 const $ = id => document.getElementById(id);
@@ -26,7 +29,7 @@ const state = {
   mode: q.get('mode') === 'sky' ? 'sky' : 'system',
   selected: q.get('sel') || 'Saturn',
   obs: saved ? { lat: saved.lat * D2R, lon: saved.lon * D2R, name: saved.name } : { lat: 51.5 * D2R, lon: -0.1 * D2R, name: 'London' },
-  showLines: true, showNames: true,
+  showLines: true, showNames: true, faint: false,
 };
 if (q.get('lat')) state.obs = { lat: parseFloat(q.get('lat')) * D2R, lon: parseFloat(q.get('lon')) * D2R, name: '' };
 
@@ -43,6 +46,11 @@ const SPEED_VALUES = {
 // ── data ───────────────────────────────────────────────────────────────────
 const skyData = await (await fetch('./assets/sky.json')).json();
 const moonImg = new Image(); moonImg.src = './assets/moon_1024.jpg';
+setEarthFn(t => heliocentricPosition(PLANETS.Earth, t));
+await loadSmall('./assets/small.json');
+for (const k of SMALL_ORDER) if (SMALL[k].kind === 'comet') SMALL[k].peak = findPeak(SMALL[k], 2461338.5);
+const SMALL_COLORS = Object.fromEntries(SMALL_ORDER.map(k => [k, SMALL[k].color]));
+const isSmall = n => !!SMALL[n];
 
 // ── three.js scene ─────────────────────────────────────────────────────────
 const glCanvas = $('gl');
@@ -108,6 +116,13 @@ function rebuildOrbits() {
     orbitPoints(name).forEach((p, i) => a.setXYZ(i, p.x, p.y, p.z));
     a.needsUpdate = true;
   }
+  for (const k of SMALL_ORDER) {
+    const o = smallObjs[k].orbit, pts = orbitSamples(SMALL[k]).map(eclToScene);
+    if (SMALL[k].kind === 'dwarf') {
+      const a = o.geometry.getAttribute('position');
+      pts.forEach((p, i) => a.setXYZ(i, p.x, p.y, p.z)); a.needsUpdate = true;
+    } else { o.geometry.setFromPoints(pts); }
+  }
 }
 const SPIN_DAYS = { Mercury: 58.65, Venus: -243.0, Mars: 1.026, Jupiter: 0.4135, Saturn: 0.444, Uranus: -0.718, Neptune: 0.671 };
 const DISPLAY_R = {};
@@ -130,6 +145,31 @@ const moonGroup = makePlanet('Moon', MOON_R, loader);
 scene.add(moonGroup);
 DISPLAY_R.Moon = MOON_R; DISPLAY_R.Sun = 1.5 * 1.7;
 
+// dwarf planets and comets
+const smallObjs = {};
+for (const k of SMALL_ORDER) {
+  const b = SMALL[k];
+  if (b.kind === 'dwarf') {
+    const r = k === 'Ceres' ? 0.5 : 0.8;
+    DISPLAY_R[k] = r;
+    const g = makePlanet(k, r, loader);
+    scene.add(g);
+    const orbit = makeOrbit(orbitSamples(b).map(eclToScene), b.color, 0.05, 0.3);
+    scene.add(orbit);
+    const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: b.color, sizeAttenuation: false, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    dot.scale.set(0.014, 0.014, 1); g.add(dot); g.userData.dot = dot;
+    smallObjs[k] = { group: g, orbit };
+  } else {
+    DISPLAY_R[k] = 0.7;
+    const g = makeComet(b.color);
+    scene.add(g);
+    const orbit = new THREE.Line(new THREE.BufferGeometry().setFromPoints(orbitSamples(b).map(eclToScene)),
+      new THREE.LineBasicMaterial({ color: new THREE.Color(b.color), transparent: true, opacity: 0.28, depthWrite: false }));
+    scene.add(orbit);
+    smallObjs[k] = { group: g, orbit, comet: true };
+  }
+}
+
 const sightLine = new THREE.Line(
   new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)]),
   new THREE.LineDashedMaterial({ color: 0xc8903f, transparent: true, opacity: 0.55, dashSize: 0.8, gapSize: 0.6 }),
@@ -138,9 +178,9 @@ scene.add(sightLine);
 
 // ── labels over the 3D scene ───────────────────────────────────────────────
 const tags = {};
-for (const name of [...PLANET_NAMES, 'Moon', 'Sun']) {
+for (const name of [...PLANET_NAMES, 'Moon', 'Sun', ...SMALL_ORDER]) {
   const el = document.createElement('div');
-  el.className = 'tag'; el.textContent = name;
+  el.className = 'tag'; el.textContent = SMALL[name] ? SMALL[name].label : name;
   el.addEventListener('click', () => select(name));
   $('tags').appendChild(el);
   tags[name] = el;
@@ -151,6 +191,7 @@ const cam = { follow: null, tween: false, dist: 0, last: new THREE.Vector3(), go
 controls.addEventListener('start', () => { cam.tween = false; });
 
 function worldPos(name) {
+  if (SMALL[name]) return smallObjs[name].group.position.clone();
   if (name === 'Sun') return new THREE.Vector3();
   if (name === 'Moon') return moonGroup.position.clone();
   return groups[name].position.clone();
@@ -160,6 +201,7 @@ function followDistance(name) {
   if (name === 'Sun') return 16;
   if (name === 'Moon') return 2.2;
   if (name === 'Earth') return r * 10;
+  if (SMALL[name]) return SMALL[name].kind === 'comet' ? 16 : Math.max(r * 6, 3);
   if (name === 'Saturn') return r * 9;
   return Math.max(r * 6, 3);
 }
@@ -191,6 +233,7 @@ function select(name) {
 // ── formatting helpers ─────────────────────────────────────────────────────
 const tz = new Intl.DateTimeFormat('en-GB', { timeZoneName: 'short' });
 const tzName = d => (tz.formatToParts(d).find(p => p.type === 'timeZoneName') || {}).value || '';
+const jdMs = jd => (jd - 2440587.5) * 86400000;
 const hhmm = ms => new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 const dayShort = ms => new Date(ms).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
@@ -233,6 +276,13 @@ for (const name of BODIES) {
   li.innerHTML = `<button data-name="${name}" aria-pressed="false"><span class="dot" style="background:${PLANET_COLORS[name]}"></span><span class="nm">${name}</span><span class="st">—</span></button>`;
   li.firstChild.addEventListener('click', () => select(name));
   list.appendChild(li);
+}
+const smallList = $('smallBodies');
+for (const k of SMALL_ORDER) {
+  const b = SMALL[k], li = document.createElement('li');
+  li.innerHTML = `<button data-name="${k}" aria-pressed="false"><span class="dot" style="background:${b.color}"></span><span class="nm">${b.label}</span><span class="st">—</span></button>`;
+  li.firstChild.addEventListener('click', () => select(k));
+  smallList.appendChild(li);
 }
 $('moonBlock').addEventListener('click', e => { if (!e.target.closest('.jump')) select('Moon'); });
 $('moonBlock').addEventListener('keydown', e => { if (e.key === 'Enter') select('Moon'); });
@@ -285,11 +335,64 @@ function updateTonight() {
     }
   }
 
+  // dwarf planets and comets
+  for (const k of SMALL_ORDER) {
+    const b = SMALL[k], st = smallList.querySelector(`[data-name="${k}"] .st`);
+    const jd = julianDate(new Date(now)), m = smallMagnitude(b, jd - 2451545.0);
+    const a = getAltAz(k, state.obs, new Date(now));
+    if (b.kind === 'comet' && m > 15) {
+      st.textContent = b.peak && b.peak.m < 14 ? `peaks mag ${b.peak.m.toFixed(1)} · ${new Date(jdMs(b.peak.jd)).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}` : 'too faint';
+      st.className = 'st';
+    } else {
+      st.textContent = `mag ${m.toFixed(1)}` + (a.alt > 0 ? ` · ${Math.round(a.alt * R2D)}° ${compass(a.az)}` : '');
+      st.className = 'st' + (a.alt > 0 && m < 10 ? ' up' : '');
+    }
+  }
+  updateEclipses();
+
   // close approaches
   $('approach').textContent = n.approach.length
     ? n.approach.slice(0, 2).map(c => `${c.a} and ${c.b} are ${c.sep.toFixed(1)}° apart tonight.`).join(' ')
     : '';
   drawChart();
+}
+
+let ecl = null, eclRendered = null;
+function ensureEclipses() {
+  const key = `${state.obs.lat}|${state.obs.lon}`;
+  const fast = state.playing && Math.abs(SPEED_VALUES[state.speedExp]) > 86400 * 20;
+  if (ecl && ecl.key === key && (fast || Math.abs(state.simTime - ecl.at) < 10 * 86400e3)) return ecl;
+  const evs = nextEclipses(state.simTime, 4).map(e => ({ ...e, local: localCircumstances(e, state.obs) }));
+  ecl = { key, at: state.simTime, evs };
+  return ecl;
+}
+function eclipseNote(e) {
+  const l = e.local;
+  if (e.kind === 'solar') {
+    if (!l.visible) return 'Not visible from here';
+    return l.total ? `Total here, at ${hhmm(l.ms)}` : `${Math.round(l.obsc * 100)}% covered here at ${hhmm(l.ms)}`;
+  }
+  return l.visible ? `Moon is up, ${Math.round(l.alt * R2D)}° at ${hhmm(e.ms)}` : 'Moon is below the horizon here';
+}
+function updateEclipses() {
+  const E = ensureEclipses();
+  if (eclRendered !== E) {
+    eclRendered = E;
+    const ul = $('eclipses'); ul.innerHTML = '';
+    E.evs.forEach(e => {
+      const li = document.createElement('li');
+      const day = new Date(e.ms).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+      li.innerHTML = `<button class="ecl"><span class="nm">${e.type} ${e.kind}</span><span class="st">${day}</span><span class="note${(e.local.visible ? ' up' : '')}">${eclipseNote(e)}</span></button>`;
+      li.firstChild.onclick = () => jumpEclipse(e);
+      ul.appendChild(li);
+    });
+  }
+}
+function jumpEclipse(e) {
+  jumpTo(e.kind === 'solar' && e.local.visible ? e.local.ms : e.ms);
+  setMode('sky');
+  select(e.kind === 'solar' ? 'Sun' : 'Moon');
+  sky.fov = e.kind === 'solar' ? 7 : 6;
 }
 
 function jumpTo(ms) {
@@ -386,6 +489,23 @@ function drawChart() {
   }
 }
 
+// instantaneous eclipse state for the observer
+const sepRaDec = (m, s) => Math.acos(Math.max(-1, Math.min(1, Math.sin(m.dec) * Math.sin(s.dec) + Math.cos(m.dec) * Math.cos(s.dec) * Math.cos(m.ra - s.ra))));
+function eclipseNow(moonB, sunB) {
+  const date = new Date(state.simTime), jd = julianDate(date);
+  const g = geometry(jd);
+  const out = { obsc: 0, lunar: null, g };
+  if (g.sepSun < 0.06 || g.sepAnti < 0.06) {
+    const m = moonB || getAltAz('Moon', state.obs, date), sn = sunB || getAltAz('Sun', state.obs, date);
+    if (g.sepSun < 0.06) out.obsc = obscuration(sepRaDec(m, sn), g.sunSD, g.moonSD).obsc;
+    if (g.sepAnti < 0.06) {
+      const { umbra, penumbra } = shadowRadii(g);
+      out.lunar = { umbra, penumbra, mag: (umbra + g.moonSD - g.sepAnti) / (2 * g.moonSD), pen: (penumbra + g.moonSD - g.sepAnti) / (2 * g.moonSD) };
+    }
+  }
+  return out;
+}
+
 // ── DOM: selected body detail ──────────────────────────────────────────────
 function bodyInfo(name) {
   const date = new Date(state.simTime);
@@ -426,8 +546,11 @@ function buildDetail(force) {
   if (name === 'Earth') return buildEarth();
   const { a, sep } = bodyInfo(name);
   const up = a.alt > 0, altD = a.alt * R2D;
-  $('dName').textContent = name;
-  $('dKind').textContent = name === 'Sun' ? 'The Sun' : name === 'Moon' ? 'The Moon' : 'Planet';
+  const sb = SMALL[name];
+  $('dName').textContent = sb ? sb.label : name;
+  $('dName').classList.toggle('long', (sb ? sb.label : name).length > 11);
+  $('dKind').textContent = name === 'Sun' ? 'The Sun' : name === 'Moon' ? 'The Moon' : sb ? (sb.kind === 'comet' ? 'Comet' : 'Dwarf planet') : 'Planet';
+  $('btnPeak').hidden = !(sb && sb.kind === 'comet');
   const r = rs(name);
   let sentence;
   if (up) sentence = `Above the horizon, ${Math.round(altD)}° up in the ${compass(a.az)}.`;
@@ -435,8 +558,17 @@ function buildDetail(force) {
     const az = getAltAz(name, state.obs, new Date(r.rise)).az;
     sentence = `Below the horizon. Rises at ${whenText(r.rise, now)} in the ${compass(az)}.`;
   } else sentence = 'Below the horizon.';
+  const ec = eclipseNow();
+  if (name === 'Sun' && ec.obsc > 0.001) sentence = ec.obsc > 0.999 ? 'In total eclipse. The Moon covers the whole disc.' : `Partly eclipsed: the Moon covers ${Math.round(ec.obsc * 100)}% of the disc.`;
+  if (name === 'Moon' && ec.lunar && ec.lunar.mag > 0) sentence = ec.lunar.mag >= 1 ? 'In total eclipse, inside the Earth\'s shadow.' : `Partly in the Earth\'s shadow (${Math.round(ec.lunar.mag * 100)}% of the disc).`;
+  let m = null;
+  if (sb) {
+    m = smallMagnitude(sb, daysSinceJ2000(julianDate(new Date(now))));
+    sentence += m < 6 ? ' Visible to the naked eye.' : m < 10 ? ' Needs binoculars.' : ' Needs a telescope.';
+  }
   $('dSentence').textContent = sentence;
   const rows = [
+    ...(sb ? [dd('Magnitude', `${m.toFixed(1)} (predicted)`)] : []),
     dd('Altitude', `${altD.toFixed(1)}°`, up ? 'up' : ''),
     dd('Azimuth', `${((a.az * R2D) % 360).toFixed(1)}° ${compass(a.az)}`),
     dd('Right ascension', formatRA(a.ra)),
@@ -445,10 +577,16 @@ function buildDetail(force) {
   if (name === 'Moon') rows.push(dd('Distance', `${Math.round(a.r * 149597870.7).toLocaleString('en-GB')} km`));
   else rows.push(dd('From Earth', `${a.r.toFixed(3)} AU · ${lightTime(a.r)}`));
   if (name !== 'Sun' && name !== 'Moon') {
-    const h = heliocentricPosition(PLANETS[name], daysSinceJ2000(julianDate(new Date(now))));
+    const tt = daysSinceJ2000(julianDate(new Date(now)));
+    const h = sb ? smallPosition(sb, tt) : heliocentricPosition(PLANETS[name], tt);
     rows.push(dd('From the Sun', `${Math.hypot(h.x, h.y, h.z).toFixed(3)} AU`));
   }
   if (name !== 'Sun') rows.push(dd('Elongation', `${(sep * R2D).toFixed(1)}° from the Sun`));
+  if (sb && sb.kind === 'comet') {
+    rows.push(dd('Perihelion', `${new Date(jdMs(sb.orb.tp)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · ${sb.orb.q.toFixed(2)} AU`));
+    if (sb.peak && sb.peak.m < 20) rows.push(dd('Brightest', `mag ${sb.peak.m.toFixed(1)} · ${new Date(jdMs(sb.peak.jd)).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`));
+  }
+  if (name === 'Sun' && ec.obsc > 0.001) rows.push(dd('Covered', `${(ec.obsc * 100).toFixed(1)}%`));
   rows.push(dd('Rises', r.rise ? whenText(r.rise, now) : '—'), dd('Sets', r.set ? whenText(r.set, now) : '—'));
   $('dRows').innerHTML = rows.join('');
 }
@@ -466,9 +604,11 @@ function setMode(m) {
 }
 for (const b of document.querySelectorAll('.modes button')) b.addEventListener('click', () => setMode(b.dataset.mode));
 $('btnFocus').onclick = () => select(state.selected);
+$('btnPeak').onclick = () => { const b = SMALL[state.selected]; if (b && b.peak) jumpTo(jdMs(b.peak.jd)); };
 $('btnOverview').onclick = () => { if (state.mode === 'system') overview(); else { sky.reset(); skyGoal = null; } };
 $('tgLines').onchange = e => { state.showLines = e.target.checked; };
 $('tgNames').onchange = e => { state.showNames = e.target.checked; };
+$('tgFaint').onchange = e => { state.faint = e.target.checked; };
 
 $('speed').value = String(state.speedExp);
 $('speedText').textContent = SPEED_LABELS[state.speedExp];
@@ -535,6 +675,31 @@ function updateScene(jd, t, dt) {
     orbits[name].material.uniforms.uHead.value = M / TWO_PI;
     orbits[name].material.uniforms.uBoost.value = name === state.selected ? 1 : 0;
   }
+  // dwarf planets & comets
+  const px = renderer.domElement.height / (2 * Math.tan(camera.fov * D2R / 2));
+  for (const k of SMALL_ORDER) {
+    const b = SMALL[k], o = smallObjs[k], p = smallPosition(b, t);
+    const pos = eclToScene(p), r = Math.hypot(p.x, p.y, p.z), mag = smallMagnitude(b, t);
+    o.mag = mag; o.r = r;
+    o.group.position.copy(pos);
+    if (!o.comet) {
+      const d = camera.position.distanceTo(pos);
+      o.group.userData.dot.material.opacity = Math.min(Math.max((d / DISPLAY_R[k] - 60) / 130, 0), 1);
+      o.group.userData.mesh.rotation.y = (jd * TWO_PI / 0.9) % TWO_PI;
+      o.orbit.material.uniforms.uHead.value = (((b.el.M0 + b.el.n * t) % TWO_PI) + TWO_PI) % TWO_PI / TWO_PI;
+      o.orbit.material.uniforms.uBoost.value = k === state.selected ? 1 : 0;
+      o.shown = true;
+    } else {
+      const show = mag < 16 || k === state.selected;
+      o.shown = show;
+      o.group.visible = show; o.orbit.visible = show;
+      const away = pos.clone().normalize();      // away from the Sun (at the origin)
+      const len = 45 * Math.min(Math.max((3.2 - r) / 2.6, 0), 1) + 2;
+      const bright = Math.min(Math.max((3.4 - r) / 2.2, 0.05), 1);
+      o.group.userData.update(away, len, bright, px);
+      o.group.userData.head.scale.setScalar(0.6 + 1.2 * bright);
+    }
+  }
   // Moon: real direction from Earth, pulled in close and enlarged for the picture
   const mv = moonDirection(jd);
   moonGroup.position.copy(groups.Earth.position).addScaledVector(mv, MOON_DIST);
@@ -584,7 +749,8 @@ function updateCamera(dt) {
 }
 
 const proj = new THREE.Vector3();
-const TAG_PRIORITY = ['Sun', 'Earth', 'Jupiter', 'Saturn', 'Moon', 'Mars', 'Venus', 'Mercury', 'Uranus', 'Neptune'];
+const colorOf = n => PLANET_COLORS[n] || SMALL_COLORS[n] || '#e8e1d2';
+const TAG_PRIORITY = ['Sun', 'Earth', 'Jupiter', 'Saturn', 'Moon', 'Mars', 'Venus', 'Mercury', 'Uranus', 'Neptune', ...SMALL_ORDER];
 function updateTags() {
   const W = innerWidth, H = innerHeight;
   const earthDist = camera.position.distanceTo(groups.Earth.position);
@@ -595,6 +761,7 @@ function updateTags() {
     const p = worldPos(name);
     proj.copy(p).project(camera);
     let show = proj.z < 1 && Math.abs(proj.x) < 1.05 && Math.abs(proj.y) < 1.05;
+    if (smallObjs[name] && !smallObjs[name].shown) show = false;
     if (name === 'Moon' && earthDist > 30) show = false;
     const sx = (proj.x + 1) / 2 * W;
     if (show && W > 880 && (sx < 36 + 316 + 6 || sx > W - 36 - 296 - 60)) show = false;
@@ -628,7 +795,8 @@ glCanvas.addEventListener('pointerup', e => {
   objs.push(moonGroup.userData.mesh, sun.userData.body);
   // generous hit radius for small distant planets: choose nearest by screen distance
   let best = null, bd = 28;
-  for (const name of [...PLANET_NAMES, 'Moon', 'Sun']) {
+  for (const name of [...PLANET_NAMES, 'Moon', 'Sun', ...SMALL_ORDER]) {
+    if (smallObjs[name] && !smallObjs[name].shown) continue;
     const v = worldPos(name).project(camera);
     if (v.z > 1) continue;
     const sx = (v.x + 1) / 2 * innerWidth, sy = (1 - v.y) / 2 * innerHeight;
@@ -676,8 +844,22 @@ function frame(now) {
     }
     const bodies = {};
     for (const n of ['Sun', 'Moon', ...BODIES]) bodies[n] = getAltAz(n, state.obs, date);
+    const small = [];
+    for (const k of SMALL_ORDER) {
+      const a = getAltAz(k, state.obs, date), m = smallMagnitude(SMALL[k], t);
+      if (m <= (state.faint ? 19 : 10.5) || k === state.selected) small.push({ name: k, label: SMALL[k].label, kind: SMALL[k].kind, mag: m, alt: a.alt, az: a.az, color: SMALL[k].color });
+    }
+    const ec = eclipseNow(bodies.Moon, bodies.Sun);
+    let lunar = null;
+    if (ec.lunar) {
+      // shadow centre = Moon position shifted by (anti-Sun − geocentric Moon), so parallax cancels
+      const mv = moonVector(jd), sv = sunVector(jd), ml = Math.hypot(mv.x, mv.y, mv.z), sl = Math.hypot(sv.x, sv.y, sv.z);
+      const d = eclipticToEquatorial({ x: -sv.x / sl - mv.x / ml, y: -sv.y / sl - mv.y / ml, z: -sv.z / sl - mv.z / ml });
+      lunar = { ...ec.lunar, dEq: [d.x, d.y, d.z] };
+    }
     sky.draw({
-      jd, obs: state.obs, bodies, moon: moonPhase(jd), colors: PLANET_COLORS,
+      jd, obs: state.obs, bodies, moon: moonPhase(jd), colors: PLANET_COLORS, small, lunar, solarObsc: ec.obsc,
+      sizes: { sun: ec.g.sunSD, moon: ec.g.moonSD },
       selected: state.selected, showLines: state.showLines, showNames: state.showNames,
       insets: innerWidth > 880 ? { l: 36 + 316 + 8, r: 36 + 296 + 8, b: 0 } : { l: 0, r: 0, b: sheetPx() },
     });
@@ -699,4 +881,5 @@ if (q.get('sel') && state.mode === 'system') {
   cam.tween = false; cam.last.copy(p);
 }
 requestAnimationFrame(frame);
+if (q.get('fov')) sky.fov = parseFloat(q.get('fov'));
 window.__solar = { state, sky, camera, controls, select, setMode };

@@ -190,3 +190,9 @@ input[type=range]::-moz-range-thumb { width: 11px; height: 11px; border-radius: 
 }
 
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+/* eclipses */
+.bodies button.ecl { grid-template-columns: 1fr auto; row-gap: 1px; padding: 6px 6px 7px 0; }
+.ecl .note { grid-column: 1 / -1; font-size: 12px; color: var(--ink-3); }
+.ecl .note.up { color: var(--sage); }
+.d-name.long { font-size: 34px; line-height: 1.15; }

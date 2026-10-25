@@ -10,6 +10,7 @@ import { heliocentricPosition, eclipticToEquatorial, toRaDec } from './kepler.js
 import { julianDate, daysSinceJ2000, altAz, lst } from './astronomy.js';
 import { PLANETS } from './elements.js';
 import { moonVector, sunVector } from './moon.js';
+import { SMALL, smallPosition } from './smallbodies.js';
 
 // ---------------------------------------------------------------------------
 // Core: get altitude (radians) of a body as seen by an observer at a JS Date
@@ -27,26 +28,28 @@ export function getAltAz(body, observer, date, isJD = false) {
   const jd = isJD ? date : julianDate(date);
   const t  = daysSinceJ2000(jd);
 
-  let rel;
+  let rel, topo = false;
   if (body === 'Moon') {
     rel = moonVector(jd);
+    topo = true;
   } else if (body === 'Sun') {
     rel = sunVector(jd);
   } else {
-    const el = typeof body === 'string' ? PLANETS[body] : body;
-    // Heliocentric ecliptic positions
-    const posBody  = heliocentricPosition(el,          t);
     const posEarth = heliocentricPosition(PLANETS.Earth, t);
+    const posBody = typeof body === 'string' && SMALL[body]
+      ? smallPosition(SMALL[body], t)
+      : heliocentricPosition(typeof body === 'string' ? PLANETS[body] : body, t);
     // Geocentric ecliptic vector
-    rel = {
-      x: posBody.x - posEarth.x,
-      y: posBody.y - posEarth.y,
-      z: posBody.z - posEarth.z,
-    };
+    rel = { x: posBody.x - posEarth.x, y: posBody.y - posEarth.y, z: posBody.z - posEarth.z };
   }
 
-  // Ecliptic → equatorial → RA/Dec
-  const eq = eclipticToEquatorial(rel);
+  // Ecliptic → equatorial
+  let eq = eclipticToEquatorial(rel);
+  if (topo) {
+    // Moon parallax: subtract the observer's position (spherical Earth), in AU
+    const Re = 6378.14 / 149597870.7, L = lst(jd, observer.lon), cl = Math.cos(observer.lat);
+    eq = { x: eq.x - Re * cl * Math.cos(L), y: eq.y - Re * cl * Math.sin(L), z: eq.z - Re * Math.sin(observer.lat) };
+  }
   const { ra, dec, r } = toRaDec(eq);
 
   // Observer frame → altitude & azimuth

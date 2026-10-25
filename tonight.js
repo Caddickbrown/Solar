@@ -97,7 +97,7 @@ export function moonInfo(ms) {
 // Next rise / set of one body from ms, searching up to 30h
 export function riseSet(body, obs, ms) {
   const f = t => altOf(body, obs, t);
-  const h0 = body === 'Moon' ? 0.1 : (body === 'Sun' ? -0.83 : 0);
+  const h0 = (body === 'Moon' || body === 'Sun') ? -0.83 : 0;
   return {
     rise: findCrossing(f, h0, +1, ms, 10 * MIN, 180),
     set:  findCrossing(f, h0, -1, ms, 10 * MIN, 180),

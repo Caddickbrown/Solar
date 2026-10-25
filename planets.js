@@ -129,6 +129,11 @@ const STYLE = {
   Saturn:  { kind: 1, c1: '#c9ad78', c2: '#ecdcae', c3: '#b39560', atm: '#4a3f26', seed: 6.2, freq: 22 },
   Uranus:  { kind: 5, c1: '#8cc7c9', c2: '#b4e0de', c3: '#7fb5bd', atm: '#2b5558', seed: 7.7, freq: 8 },
   Neptune: { kind: 1, c1: '#2f4fa8', c2: '#5c80d6', c3: '#8aa8e8', atm: '#1d2f68', seed: 8.8, freq: 12 },
+  Ceres:    { kind: 0, c1: '#5d5852', c2: '#a49c90', c3: '#000', atm: '#141210', seed: 11.2 },
+  Pluto:    { kind: 0, c1: '#7a5f4d', c2: '#dcc7ac', c3: '#000', atm: '#1c1814', seed: 12.6 },
+  Haumea:   { kind: 0, c1: '#b9b4ab', c2: '#eeeae2', c3: '#000', atm: '#1c1c1a', seed: 13.1 },
+  Makemake: { kind: 0, c1: '#7f4a36', c2: '#c98a66', c3: '#000', atm: '#1c1410', seed: 14.4 },
+  Eris:     { kind: 0, c1: '#b8b7b3', c2: '#efeeea', c3: '#000', atm: '#1c1c1c', seed: 15.8 },
   Moon:    { kind: 4, c1: '#000', c2: '#000', c3: '#000', atm: '#0c0c0c', seed: 0 },
   Earth:   { kind: 4, c1: '#000', c2: '#000', c3: '#000', atm: '#2c5f98', seed: 0 },
 };
@@ -247,7 +252,7 @@ export function makeSun() {
 }
 
 // Orbit with a comet-like trail: brightest right behind the planet
-export function makeOrbit(points, color) {
+export function makeOrbit(points, color, base = 0.13, gain = 0.55) {
   const n = points.length;
   const pos = new Float32Array(n * 3), s = new Float32Array(n);
   points.forEach((p, i) => { pos.set([p.x, p.y, p.z], i * 3); s[i] = i / (n - 1); });
@@ -256,10 +261,10 @@ export function makeOrbit(points, color) {
   geo.setAttribute('s', new THREE.BufferAttribute(s, 1));
   const mat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false,
-    uniforms: { uHead: { value: 0 }, uColor: { value: new THREE.Color(color).convertLinearToSRGB() }, uBoost: { value: 0 } },
+    uniforms: { uBase: { value: base }, uGain: { value: gain }, uHead: { value: 0 }, uColor: { value: new THREE.Color(color).convertLinearToSRGB() }, uBoost: { value: 0 } },
     vertexShader: `attribute float s; varying float vS; void main(){ vS = s; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
-    fragmentShader: `uniform float uHead, uBoost; uniform vec3 uColor; varying float vS;
-      void main(){ float behind = fract(uHead - vS); float a = 0.13 + 0.55*pow(1.-behind, 3.) + uBoost*.25;
+    fragmentShader: `uniform float uHead, uBoost, uBase, uGain; uniform vec3 uColor; varying float vS;
+      void main(){ float behind = fract(uHead - vS); float a = uBase + uGain*pow(1.-behind, 3.) + uBoost*.3;
         gl_FragColor = vec4(uColor, a); }`,
   });
   return new THREE.Line(geo, mat);
@@ -316,4 +321,53 @@ export function makeConstellations(lines) {
   const l = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0xc8903f, transparent: true, opacity: 0.16, depthWrite: false }));
   l.frustumCulled = false; l.renderOrder = -3;
   return l;
+}
+
+
+// A comet: bright head, faint coma, and two tails pointing away from the Sun
+// (a straight ion tail and a curved dust tail). update() sets the geometry.
+export function makeComet(color) {
+  const group = new THREE.Group();
+  const head = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTexture([[0, 'rgba(255,255,255,1)'], [0.18, 'rgba(210,240,235,.85)'], [0.45, 'rgba(150,215,200,.22)'], [1, 'rgba(120,200,190,0)']]),
+    blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, color: new THREE.Color(color),
+  }));
+  head.scale.set(1.2, 1.2, 1);
+  group.add(head);
+  const N = 320, s = new Float32Array(N), pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) s[i] = i / (N - 1);
+  const mk = (tint, curve) => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('s', new THREE.BufferAttribute(s, 1));
+    const mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      uniforms: { uDir: { value: new THREE.Vector3(1, 0, 0) }, uSide: { value: new THREE.Vector3(0, 0, 1) }, uLen: { value: 10 },
+                  uBright: { value: 1 }, uScale: { value: 600 }, uTint: { value: new THREE.Color(tint) }, uCurve: { value: curve }, uW: { value: 0.8 } },
+      vertexShader: `attribute float s; uniform vec3 uDir, uSide; uniform float uLen, uScale, uCurve, uW; varying float vA;
+        void main(){ vec3 p = uDir*uLen*s + uSide*uCurve*uLen*s*s;
+          vec4 mv = modelViewMatrix*vec4(p,1.); gl_Position = projectionMatrix*mv;
+          gl_PointSize = clamp(uW*(1.0+3.0*s)*uScale/(-mv.z), 2.5, 70.0); vA = pow(1.0-s, 2.2); }`,
+      fragmentShader: `uniform vec3 uTint; uniform float uBright; varying float vA;
+        void main(){ vec2 d = gl_PointCoord-.5; float r = length(d)*2.; float a = smoothstep(1.,0.,r)*vA*uBright*0.045;
+          gl_FragColor = vec4(uTint, a); }`,
+    });
+    const pts = new THREE.Points(geo, mat); pts.frustumCulled = false;
+    return pts;
+  };
+  const ion = mk('#7fc3dc', 0.0), dust = mk('#ecdcb4', 0.22);
+  group.add(ion, dust);
+  group.userData = {
+    head, ion, dust,
+    update(dirAway, len, bright, scale) {
+      const side = new THREE.Vector3().crossVectors(dirAway, new THREE.Vector3(0, 1, 0));
+      if (side.lengthSq() < 1e-6) side.set(0, 0, 1);
+      side.normalize();
+      for (const [pts, k] of [[ion, 1.0], [dust, 0.75]]) {
+        const u = pts.material.uniforms;
+        u.uDir.value.copy(dirAway); u.uSide.value.copy(side); u.uLen.value = len * k; u.uBright.value = bright; u.uScale.value = scale;
+      }
+    },
+  };
+  return group;
 }

@@ -90,7 +90,7 @@ export class SkyView {
       if (ptrs.size === 2) {
         const [a, b] = [...ptrs.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (pinch) this.fov = clamp(this.fov * pinch / d, 20, 150);
+        if (pinch) this.fov = clamp(this.fov * pinch / d, 2, 150);
         pinch = d; moved = 99;
         return;
       }
@@ -109,7 +109,7 @@ export class SkyView {
     cv.addEventListener('pointercancel', e => ptrs.delete(e.pointerId));
     cv.addEventListener('wheel', e => {
       e.preventDefault();
-      this.fov = clamp(this.fov * Math.exp(e.deltaY * 0.0012), 20, 150);
+      this.fov = clamp(this.fov * Math.exp(e.deltaY * 0.0012), 2, 150);
     }, { passive: false });
     cv.addEventListener('dblclick', () => this.reset());
   }
@@ -178,7 +178,7 @@ export class SkyView {
     this.setup(w, h, lstRad, st.obs.lat);
     this.hits = [];
 
-    const sunAlt = st.bodies.Sun.alt / D2R;
+    const sunAlt = st.bodies.Sun.alt / D2R - 22 * Math.pow(st.solarObsc || 0, 6);   // totality darkens the sky
     const sky = skyColor(sunAlt);
 
     // ground
@@ -290,32 +290,43 @@ export class SkyView {
     });
     g.textAlign = 'left';
 
-    // bodies
-    const order = ['Neptune', 'Uranus', 'Saturn', 'Jupiter', 'Mars', 'Mercury', 'Venus', 'Moon', 'Sun'];
+    // dwarf planets and comets, under the planets
+    for (const sm of (st.small || [])) {
+      if (sm.alt < -0.5 * D2R && sm.name !== st.selected) continue;
+      const v = this.horAltAz(sm.alt, sm.az), p = this.proj(v);
+      if (!p || p[0] < -40 || p[0] > w + 40 || p[1] < -40 || p[1] > h + 40) continue;
+      this.drawSmall(g, sm, p, st);
+    }
+
+    // bodies (Sun then Moon last, so the Moon can pass in front of the Sun)
+    const order = ['Neptune', 'Uranus', 'Saturn', 'Jupiter', 'Mars', 'Mercury', 'Venus', 'Sun', 'Moon'];
+    let sunP = null;
     for (const name of order) {
       const b = st.bodies[name];
       if (!b) continue;
       const v = this.horAltAz(b.alt, b.az);
       const p = this.proj(v);
       if (!p) continue;
+      if (name === 'Sun') sunP = p;
       if (b.alt < -0.5 * D2R && name !== 'Sun' && name !== 'Moon') continue;
       if (p[0] < -40 || p[0] > w + 40 || p[1] < -40 || p[1] > h + 40) continue;
-      this.drawBody(g, name, b, p, st, sky);
+      const kk = 2 / (1 + v[0] * this.c[0] + v[1] * this.c[1] + v[2] * this.c[2]);
+      this.drawBody(g, name, b, p, st, sky, kk, v);
     }
+    // corona at totality
+    if ((st.solarObsc || 0) > 0.995 && sunP) this.drawCorona(g, sunP, st, sunP);
 
-    // quiet the sky behind the text columns so the type stays readable
+    // soften the sky behind the text columns so the type stays readable (one smooth fall-off, no hard edge)
     const ins = st.insets;
     if (ins && (ins.l || ins.r)) {
       const bg = '8,8,10';
-      for (const [x0, x1, dir] of [[0, ins.l, 1], [w - ins.r, w, -1]]) {
-        const fade = 90;
-        const gx0 = dir > 0 ? x1 - 6 : x0 + 6, gx1 = dir > 0 ? x1 + fade : x0 - fade;
-        const gr = g.createLinearGradient(gx0, 0, gx1, 0);
-        gr.addColorStop(0, `rgba(${bg},0.9)`); gr.addColorStop(1, `rgba(${bg},0)`);
-        g.fillStyle = `rgba(${bg},0.9)`;
-        g.fillRect(x0, 0, x1 - x0, h);
+      for (const dir of [1, -1]) {
+        const reach = (dir > 0 ? ins.l : ins.r) + 150;
+        const x0 = dir > 0 ? 0 : w, x1 = dir > 0 ? reach : w - reach;
+        const gr = g.createLinearGradient(x0, 0, x1, 0);
+        gr.addColorStop(0, `rgba(${bg},0.82)`); gr.addColorStop(0.6, `rgba(${bg},0.55)`); gr.addColorStop(1, `rgba(${bg},0)`);
         g.fillStyle = gr;
-        g.fillRect(dir > 0 ? x1 : x0 - fade, 0, fade, h);
+        g.fillRect(dir > 0 ? 0 : w - reach, 0, reach, h);
       }
     }
   }
@@ -345,21 +356,23 @@ export class SkyView {
     g.stroke();
   }
 
-  drawBody(g, name, b, p, st, sky) {
+  drawBody(g, name, b, p, st, sky, kk, v) {
     const sel = st.selected === name;
     const color = st.colors[name];
     const isSun = name === 'Sun', isMoon = name === 'Moon';
-    const r = isMoon ? 13 : isSun ? 9 : ({ Venus: 4.6, Jupiter: 4.2, Mars: 3.2, Saturn: 3.2, Mercury: 2.6, Uranus: 2.1, Neptune: 1.9 }[name] || 2.5);
+    let r = isMoon || isSun ? 10 : ({ Venus: 4.6, Jupiter: 4.2, Mars: 3.2, Saturn: 3.2, Mercury: 2.6, Uranus: 2.1, Neptune: 1.9 }[name] || 2.5);
+    if (isSun || isMoon) r = Math.max(10, this.S * kk * (isSun ? st.sizes.sun : st.sizes.moon));
+    const eclipsing = (st.solarObsc || 0) > 0.001;
 
     // glow
     const gr = g.createRadialGradient(p[0], p[1], 0, p[0], p[1], r * (isSun ? 7 : isMoon ? 3.4 : 4));
     const [cr, cg, cb] = hex(color);
-    gr.addColorStop(0, `rgba(${cr},${cg},${cb},${isSun ? 0.55 : 0.32})`);
+    gr.addColorStop(0, `rgba(${cr},${cg},${cb},${isSun ? 0.55 * (1 - Math.min(1, (st.solarObsc || 0) * 1.05)) : 0.32})`);
     gr.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
     g.fillStyle = gr;
-    g.beginPath(); g.arc(p[0], p[1], r * (isSun ? 7 : isMoon ? 3.4 : 4), 0, 7); g.fill();
+    if (!(isMoon && eclipsing)) { g.beginPath(); g.arc(p[0], p[1], r * (isSun ? 7 : isMoon ? 3.4 : 4), 0, 7); g.fill(); }
 
-    if (isMoon) this.drawMoon(g, p, r, st);
+    if (isMoon) this.drawMoon(g, p, r, st, kk, v);
     else {
       g.fillStyle = color;
       g.beginPath(); g.arc(p[0], p[1], r, 0, 7); g.fill();
@@ -373,11 +386,11 @@ export class SkyView {
     g.font = (sel ? '500 italic 16px' : 'italic 14px') + ' Newsreader, serif';
     g.fillStyle = sel ? '#f4eee0' : 'rgba(232,225,210,0.78)';
     g.textBaseline = 'middle';
-    g.fillText(name, p[0] + r + 10, p[1] + 1);
+    if (!(isMoon && eclipsing && !sel)) g.fillText(name, p[0] + r + 10, p[1] + 1);
     this.hits.push({ name, x: p[0], y: p[1] });
   }
 
-  drawMoon(g, p, r, st) {
+  drawMoon(g, p, r, st, kk, v) {
     const m = st.moon;
     // direction on screen from the Moon toward the Sun → bright limb
     const sv = this.horAltAz(st.bodies.Sun.alt, st.bodies.Sun.az);
@@ -421,6 +434,71 @@ export class SkyView {
       this.drawMoonTexture(g, p, r);
     }
     g.restore();
+
+    // the Earth's shadow, in true angular size, centred where the geocentric line lands
+    if (st.lunar && v) {
+      const d = this.hor(st.lunar.dEq[0], st.lunar.dEq[1], st.lunar.dEq[2]);
+      let c = [v[0] + d[0], v[1] + d[1], v[2] + d[2]];
+      const l = Math.hypot(c[0], c[1], c[2]); c = c.map(x => x / l);
+      const cp = this.proj(c);
+      if (cp) {
+        const Ru = this.S * kk * st.lunar.umbra, Rp = this.S * kk * st.lunar.penumbra;
+        g.save();
+        g.beginPath(); g.arc(p[0], p[1], r, 0, 7); g.clip();
+        let gr = g.createRadialGradient(cp[0], cp[1], Rp * 0.5, cp[0], cp[1], Rp);
+        gr.addColorStop(0, 'rgba(40,14,8,0.34)'); gr.addColorStop(1, 'rgba(40,14,8,0)');
+        g.fillStyle = gr; g.fillRect(p[0] - r, p[1] - r, 2 * r, 2 * r);
+        gr = g.createRadialGradient(cp[0], cp[1], Ru * 0.9, cp[0], cp[1], Ru * 1.04);
+        gr.addColorStop(0, 'rgba(78,26,12,0.9)'); gr.addColorStop(1, 'rgba(78,26,12,0)');
+        g.fillStyle = gr; g.fillRect(p[0] - r, p[1] - r, 2 * r, 2 * r);
+        g.restore();
+      }
+    }
+  }
+
+  drawCorona(g, p, st) {
+    const r = Math.max(10, this.S * 1.0 * st.sizes.sun);
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    let gr = g.createRadialGradient(p[0], p[1], r * 0.98, p[0], p[1], r * 3.6);
+    gr.addColorStop(0, 'rgba(255,248,235,0.85)'); gr.addColorStop(0.25, 'rgba(235,225,255,0.30)'); gr.addColorStop(1, 'rgba(200,200,255,0)');
+    g.fillStyle = gr;
+    g.beginPath(); g.arc(p[0], p[1], r * 3.6, 0, 7); g.arc(p[0], p[1], r * 0.97, 0, 7, true); g.fill('evenodd');   // leave the Moon's disc dark
+    g.strokeStyle = 'rgba(240,235,255,0.16)'; g.lineWidth = 1.2;
+    for (let i = 0; i < 18; i++) {
+      const a = i / 18 * 2 * Math.PI + 0.3, len = r * (1.8 + 1.6 * Math.abs(Math.sin(i * 2.7)));
+      g.beginPath(); g.moveTo(p[0] + r * 1.05 * Math.cos(a), p[1] + r * 1.05 * Math.sin(a)); g.lineTo(p[0] + len * Math.cos(a), p[1] + len * Math.sin(a)); g.stroke();
+    }
+    g.restore();
+  }
+
+  drawSmall(g, sm, p, st) {
+    const sel = st.selected === sm.name;
+    const [cr, cg, cb] = hex(sm.color);
+    if (sm.kind === 'comet') {
+      // tail points away from the Sun on the sky
+      const sv = this.horAltAz(st.bodies.Sun.alt, st.bodies.Sun.az), sp = this.proj(sv);
+      let dx = 0, dy = 0;
+      if (sp) { dx = p[0] - sp[0]; dy = p[1] - sp[1]; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l; }
+      const len = 20 + 90 * clamp((10.5 - sm.mag) / 7, 0, 1);
+      const gr = g.createLinearGradient(p[0], p[1], p[0] + dx * len, p[1] + dy * len);
+      gr.addColorStop(0, `rgba(${cr},${cg},${cb},0.55)`); gr.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+      g.strokeStyle = gr; g.lineWidth = 3.2; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(p[0] + dx * len, p[1] + dy * len); g.stroke();
+      const gl = g.createRadialGradient(p[0], p[1], 0, p[0], p[1], 14);
+      gl.addColorStop(0, `rgba(${cr},${cg},${cb},0.5)`); gl.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+      g.fillStyle = gl; g.beginPath(); g.arc(p[0], p[1], 14, 0, 7); g.fill();
+    }
+    g.fillStyle = sm.color;
+    g.beginPath(); g.arc(p[0], p[1], clamp(3.2 - (sm.mag - 6) * 0.25, 1.5, 3.4), 0, 7); g.fill();
+    if (sel) { g.strokeStyle = '#e8e1d2'; g.lineWidth = 1; g.beginPath(); g.arc(p[0], p[1], 10, 0, 7); g.stroke(); }
+    g.font = (sel ? '500 italic 15px' : 'italic 13px') + ' Newsreader, serif';
+    g.fillStyle = sel ? '#f4eee0' : 'rgba(232,225,210,0.7)';
+    g.textBaseline = 'middle';
+    g.fillText(`${sm.label}`, p[0] + 12, p[1] + 1);
+    g.font = '300 10.5px Outfit, sans-serif'; g.fillStyle = 'rgba(232,225,210,0.4)';
+    g.fillText(`mag ${sm.mag.toFixed(1)}`, p[0] + 12, p[1] + 14);
+    this.hits.push({ name: sm.name, x: p[0], y: p[1] });
   }
 
   drawMoonTexture(g, p, r) {

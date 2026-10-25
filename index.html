@@ -56,6 +56,11 @@
   </section>
 
   <section>
+    <h2>Eclipses</h2>
+    <ul class="bodies" id="eclipses"></ul>
+  </section>
+
+  <section>
     <h2>The night</h2>
     <canvas id="nightChart" height="136"></canvas>
     <p class="muted fine" id="approach"></p>
@@ -66,9 +71,15 @@
     <ul class="bodies" id="bodies"></ul>
   </section>
 
+  <section>
+    <h2>Beyond the planets</h2>
+    <ul class="bodies" id="smallBodies"></ul>
+  </section>
+
   <section class="toggles" id="skyToggles" hidden>
     <label><input type="checkbox" id="tgLines" checked> Constellation lines</label>
     <label><input type="checkbox" id="tgNames" checked> Star names</label>
+    <label><input type="checkbox" id="tgFaint"> Telescope objects</label>
   </section>
 </aside>
 
@@ -79,6 +90,7 @@
   <dl class="rows" id="dRows"></dl>
   <div class="d-actions">
     <button id="btnFocus">Centre</button>
+    <button id="btnPeak" hidden>Brightest</button>
     <button id="btnOverview">Overview</button>
   </div>
 </aside>
